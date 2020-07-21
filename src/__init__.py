@@ -7,11 +7,15 @@ import requests
 import selenium.common.exceptions
 import urllib3
 from selenium.webdriver import Chrome
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import NoSuchElementException
 import telegram_send
 import argparse
 
+DEBUG = False
 sito = "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock"
 optional_desiderati = [
     ['Radar Pack'],
@@ -23,7 +27,8 @@ cars_json=r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\src\\cars.json'
 stderrFile = r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\stderr.txt'
 errScreenFile = r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\screenFail.png'
 cap ='10098'
-radius = "100"
+radius = "200"
+delay = 5
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--loop',action='store_true' ,help='Indicates if you want script always on')
@@ -56,20 +61,22 @@ def is_new_car(nuova_auto, link):
 
 def settings():
     # SETTINGS
-
-    #scroll the page to load all the cars
-    i=0
-    while i<3:
-        driver.execute_script("window.scrollBy(0,250)")
-        i+=1
-        time.sleep(2)
-
+    try:
+        if driver.find_element_by_xpath("/html/body").find_element_by_class_name("main-frame-error") is not None:
+            print("Errore di connessione")
+            return False
+    except selenium.common.exceptions.NoSuchElementException:
+        pass
 
     model_select = Select(driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[1]/label/select"))
     if model_select is None:
         return False
     model_select.select_by_value('6')
-    print("Selezionato il modello", model_select.first_selected_option.text)
+    selezionato = model_select.first_selected_option.text
+    if selezionato == "Corsa":
+        print("Selezionato il modello", selezionato)
+    else:
+        return False
     time.sleep(3)
 
 
@@ -78,7 +85,11 @@ def settings():
         return False
     city_input.send_keys(cap)
     city_input.send_keys(Keys.ENTER)
-    print("Selezionato il cap", city_input.get_attribute("value"))
+    selezionato = city_input.get_attribute("value")
+    if  selezionato == cap:
+        print("Selezionato il cap", selezionato)
+    else:
+        return False
     time.sleep(3)
 
 
@@ -89,19 +100,36 @@ def settings():
     if raggio is None:
         return False
     raggio.select_by_visible_text(radius)
-    print("Selezionato il raggio", raggio.first_selected_option.text)
+    selezionato = raggio.first_selected_option.text
+    if selezionato == radius:
+        print("Selezionato il raggio", selezionato)
+    else:
+        return False
     time.sleep(3)
 
-    trasm_box =driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[7]/label/select")
-    if trasm_box is None:
-        return  False
-    trasmission = Select(trasm_box)
-    if trasmission is None:
+    try:
+        trasm_box =driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[7]/label/select")
+        trasmission = Select(trasm_box)
+        trasmission.select_by_index(1)  # cambio automatico
+        selezionato = trasmission.first_selected_option.text
+        if selezionato == "Cambio automatico":
+            print("Selezionato la trasmissione", selezionato)
+        else:
+            return False
+        time.sleep(3)
+    except NoSuchElementException:
         return False
-    trasmission.select_by_index(1) #cambio automatico
-    print("Selezionato la trasmissione", trasmission.first_selected_option.text)
-    time.sleep(3)
     return True
+
+
+def scroll_page():
+    # scroll the page to load all the cars
+    i = 0
+    while i < 3:
+        driver.execute_script("window.scrollBy(0,250)")
+        i += 1
+        time.sleep(2)
+
 
 def ha_optional_giusti(nuova_auto: dict):
     i=0
@@ -132,29 +160,40 @@ def get_new_car():
 
     n_auto = -1
     auto_left = True
+    page_left = True
     # estrae auto dalla lista sul sito
-    while auto_left or n_auto < len(automobili) - 1:
-        n_auto += 1
-        try:
-            info_box = automobili[n_auto].find_element_by_class_name('auto_content')
-        except Exception as e:  # non ci sono più auto
-            auto_left = False
-            continue
-        if info_box is None:
-            auto_left = False
-            continue
-        title_box = info_box.find_element_by_class_name('main_part').find_element_by_class_name(
-            'titles_prices').find_element_by_class_name('top_titles').find_element_by_tag_name(
-            'h2').find_element_by_tag_name('a')
-        link = title_box.get_attribute('href')
-        nome = title_box.text
+    while page_left:
+        while auto_left or n_auto < len(automobili) - 1:
+            n_auto += 1
+            try:
+                info_box = automobili[n_auto].find_element_by_class_name('auto_content')
+            except Exception as e:  # non ci sono più auto
+                auto_left = False
+                continue
+            if info_box is None:
+                auto_left = False
+                continue
+            title_box = info_box.find_element_by_class_name('main_part').find_element_by_class_name(
+                'titles_prices').find_element_by_class_name('top_titles').find_element_by_tag_name(
+                'h2').find_element_by_tag_name('a')
+            link = title_box.get_attribute('href')
+            nome = title_box.text
 
-        # cerca se allestimento è giusto (secondo controllo)
-        nuova_auto = {'nome': nome}
-        if allestimento_giusto(nuova_auto):
-            print(n_auto, '- Ho trovato questa auto con allestimento giusto', nuova_auto)
-            list_auto_new[link] = nuova_auto
-    # end while
+            # cerca se allestimento è giusto (secondo controllo)
+            nuova_auto = {'nome': nome}
+            if allestimento_giusto(nuova_auto):
+                print(n_auto, '- Ho trovato questa auto con allestimento giusto', nuova_auto)
+                list_auto_new[link] = nuova_auto
+        # end while
+        # cambio pagina
+        try:
+            tasto_cambio_pagina = driver.find_element_by_xpath(
+                "/html/body/div[2]/div[1]/div[2]/div[2]/div[1]/div/ul/li[13]/a")
+            tasto_cambio_pagina.click()
+            time.sleep(1)
+            scroll_page()
+        except NoSuchElementException:
+            page_left = False
 
 def controlla_tutti_optional():
     # controlla che l'auto abbia gli optionals giusti e che sia nuova
@@ -174,50 +213,61 @@ def controlla_tutti_optional():
             list_auto_new.pop(link)
 
 def cambia_allestimento(allest):
-    allest_select = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[8]/label/select")
-    if allest_select is None:
+    try:
+        allest_select = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[8]/label/select")
+        allest_select = Select(allest_select)
+        allest_select.select_by_visible_text(allest)
+        selezionato = allest_select.first_selected_option.text
+        if selezionato == allest:
+            print("Selezionato allestimento", selezionato)
+            time.sleep(3)
+        else:
+            return False
+        return True
+    except NoSuchElementException:
         return False
-    allest_select = Select(allest_select)
-    if allest_select is None:
-        return False
-    allest_select.select_by_visible_text(allest)
-    print("Selezionato allestimento", allest_select.first_selected_option.text)
-    time.sleep(3)
-    return True
 
 def start_new_search(cars_json):
     global driver, list_auto_old, list_auto_new
     try:
-        with Chrome() as driver:
-            driver.get(sito)
-            ok = settings()
-            list_auto_old = {}
-            list_auto_new = {}
-            try:
-                with open(cars_json, 'r', encoding='UTF-8') as reader:
-                    list_auto_old = json.load(reader)
-            except FileNotFoundError:
-                with open(cars_json, 'x', encoding='UTF-8') as writer:
-                    writer.write(json.dumps({}))
-            print("Nuova ricerca auto")
-            for al in allestimento_desiderato:
-                if ok:
-                    ok = cambia_allestimento(al)
-                if ok:
-                    get_new_car()
-            controlla_tutti_optional()
-            #persistenza delle nuove auto
-            with open(cars_json, 'w', encoding='UTF-8') as writer:
-                writer.write(json.dumps(list_auto_new, indent=3))
-            print("Fine ricerca")
-    except (socket.gaierror, urllib3.exceptions.NewConnectionError, urllib3.exceptions.MaxRetryError, requests.exceptions.ConnectionError):
+        browser = Chrome()
+        browser.get(sito)
+        driver = WebDriverWait(browser,delay)
+        ok = settings()
+        if not ok:
+            return
+        list_auto_old = {}
+        list_auto_new = {}
+        try:
+            with open(cars_json, 'r', encoding='UTF-8') as reader:
+                list_auto_old = json.load(reader)
+        except FileNotFoundError:
+            with open(cars_json, 'x', encoding='UTF-8') as writer:
+                writer.write(json.dumps({}))
+        print("Nuova ricerca auto")
+        for al in allestimento_desiderato:
+            if ok:
+                ok = cambia_allestimento(al)
+            else:
+                return
+            if ok:
+                get_new_car()
+            else:
+                return
+        controlla_tutti_optional()
+        #persistenza delle nuove auto
+        with open(cars_json, 'w', encoding='UTF-8') as writer:
+            writer.write(json.dumps(list_auto_new, indent=3))
+        print("Fine ricerca")
+    except (ConnectionRefusedError,socket.gaierror, urllib3.exceptions.NewConnectionError, urllib3.exceptions.MaxRetryError, requests.exceptions.ConnectionError):
         print("Errore di connessione")
     except selenium.common.exceptions.NoSuchElementException as e:
-        driver.save_screenshot(errScreenFile)
+        #driver.save_screenshot(errScreenFile)
         with open(stderrFile,'a') as errFile:
             print(time.strftime("%d/%m/%Y %H:%M:%S", time.localtime()),e, file=errFile)
             print(time.strftime("%d/%m/%Y %H:%M:%S", time.localtime()), "Stamped screen of the problem at ",str(errScreenFile), file=errFile)
-        raise
+        if DEBUG:
+            raise
 
 if __name__== '__main__':
     if args.loop is not None and args.loop:
@@ -229,6 +279,7 @@ if __name__== '__main__':
         except Exception as e:
             with open(stderrFile, 'a') as error:
                 print(time.strftime("%d/%m/%Y %H:%M:%S", time.localtime()), e, file=error)
-            raise
+            if DEBUG:
+                raise
     else:
         start_new_search(cars_json)
