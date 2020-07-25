@@ -13,7 +13,7 @@ from selenium.common.exceptions import NoSuchElementException
 import telegram_send
 import argparse
 
-DEBUG = True
+DEBUG = False
 sito = "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock"
 optional_desiderati = [
     ['Radar Pack'],
@@ -53,7 +53,8 @@ def is_new_car(nuova_auto, link):
     else:
         manda_tg = True
     if manda_tg:
-        telegram_send.send(messages=[link])
+        messaggio = "<a href='{0}'>{1} al prezzo di: {2}</a>".format(link, nuova_auto['nome'],nuova_auto['prezzo'])
+        telegram_send.send(messages=[messaggio], parse_mode="html")
     return manda_tg
 
 def settings():
@@ -151,9 +152,6 @@ def allestimento_giusto(nuova_auto):
 def get_new_car():
     print("Analizzo nuovo blocco auto")
     # GET INFO
-
-
-
     auto_left = True
     page_left = True
     n_page = 0
@@ -197,7 +195,7 @@ def get_new_car():
         except NoSuchElementException:
             page_left = False
 
-def controlla_tutti_optional():
+def arricchisci_scheda_auto():
     # controlla che l'auto abbia gli optionals giusti e che sia nuova
     for link, car in list_auto_new.copy().items():
         driver.get(link)
@@ -206,6 +204,11 @@ def controlla_tutti_optional():
             car['optional'] = optionals
         except Exception as e:  # non ci sono optional
             car['optional'] = ''
+        try:
+            prezzo_box = driver.find_element_by_class_name("gross_price_new")
+            car['prezzo'] = prezzo_box.text
+        except NoSuchElementException: #non c'è scitto il prezzo
+            car['prezzo']=""
 
         if ha_optional_giusti(car):
             print('- Ho trovato questa auto con optional corretti', car)
@@ -255,7 +258,7 @@ def start_new_search(cars_json):
                     get_new_car()
                 else:
                     return
-            controlla_tutti_optional()
+            arricchisci_scheda_auto()
             #persistenza delle nuove auto
             with open(cars_json, 'w', encoding='UTF-8') as writer:
                 writer.write(json.dumps(list_auto_new, indent=3))
