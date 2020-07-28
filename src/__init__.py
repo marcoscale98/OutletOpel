@@ -161,25 +161,38 @@ def get_new_car():
         automobili = box_auto.find_elements_by_class_name('auto_item')
         print("Trovate", str(len(automobili)), "auto da analizzare nella pagina numero", n_page)
         n_page+=1
-        n_auto = -1
-        while auto_left or n_auto < len(automobili) - 1:
-            n_auto += 1
+        n_auto = 0
+        while auto_left and n_auto < len(automobili):
             try:
                 info_box = automobili[n_auto].find_element_by_class_name('auto_content')
-            except Exception as e:  # non ci sono più auto
+            except NoSuchElementException as e:  # non ci sono più auto
                 auto_left = False
                 continue
-            title_box = info_box.find_element_by_class_name('main_part').find_element_by_class_name(
+            try:
+                title_box = info_box.find_element_by_class_name('main_part').find_element_by_class_name(
                 'titles_prices').find_element_by_class_name('top_titles').find_element_by_tag_name(
                 'h2').find_element_by_tag_name('a')
-            link = title_box.get_attribute('href')
-            nome = title_box.text
-
+            except NoSuchElementException:
+                print(n_auto, '- title_box non trovata')
+                continue
+            try:
+                link = title_box.get_attribute('href')
+            except NoSuchElementException:
+                print(n_auto, "- link non trovato")
+                continue
+            try:
+                nome = title_box.text
+            except NoSuchElementException:
+                print(n_auto, "- nome non trovato")
+                continue
             # cerca se allestimento è giusto (secondo controllo)
             nuova_auto = {'nome': nome}
-            if allestimento_giusto(nuova_auto):
-                print(n_auto, '- Ho trovato questa auto con allestimento giusto', nuova_auto)
-                list_auto_new[link] = nuova_auto
+            #if allestimento_giusto(nuova_auto):
+            print(n_auto, '- Ho trovato questa auto con allestimento giusto', nuova_auto)
+            if link in list_auto_new:
+                print(link, "- è già presente")
+            list_auto_new[link] = nuova_auto
+            n_auto += 1
         # end while
         # cambio pagina
         try:
@@ -189,14 +202,15 @@ def get_new_car():
             tasto_cambio_pagina = tasto_cambio_pagina.find_element_by_class_name("to-right")
             tasto_cambio_pagina = tasto_cambio_pagina.find_element_by_tag_name("a")
             tasto_cambio_pagina.click()
-            time.sleep(1)
-            #scroll_page()
+            time.sleep(3)
+            scroll_page()
             print("Ho cambiato pagina")
         except NoSuchElementException:
             page_left = False
 
 def arricchisci_scheda_auto():
     # controlla che l'auto abbia gli optionals giusti e che sia nuova
+    print("Controllo le pagine di", len(list_auto_new), "auto")
     for link, car in list_auto_new.copy().items():
         driver.get(link)
         try:
