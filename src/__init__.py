@@ -14,18 +14,29 @@ import telegram_send
 import argparse
 
 DEBUG = False
-sito = "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock"
-optional_desiderati = [
-    ['Radar Pack'],
-    ['Rear View Camera Pack','Park & Go Pack','Park e Go Pack'],
-    ['Style Pack Black']
-]
-allestimento_desiderato = ['GS Line','Elegance','e-Elegance']
-cars_json=r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\src\\cars.json'
-stderrFile = r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\stderr.txt'
-errScreenFile = r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\screenFail.png'
-cap ='10098'
-radius = "200"
+with open("config.json","r") as config:
+    config = json.load(config)
+    if config['sito'] is not None:
+        sito = config['sito']
+    else:
+        sito = "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock"
+    optional_desiderati = []
+    if config['optional_desiderati'] is not None:
+        optional_desiderati = config['optional_desiderati']
+    allestimento_desiderato = []
+    if config["allestimento_desiderato"] is not None:
+        allestimento_desiderato = config["allestimento_desiderato"]
+    cars_json = "cars.json"
+    if  config["database"] is not None:
+        cars_json = config["database"]
+    stderrFile = r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\stderr.txt'
+    errScreenFile = r'D:\\Marco\\Universita\\Progetti\\OpelCorsaPy\\screenFail.png'
+    cap = "10010"
+    if config["cap"] is not None:
+        cap = config["cap"]
+    radius = "200"
+    if config["radius"] is not None:
+        radius = config["radius"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--loop',action='store_true' ,help='Indicates if you want script always on')
@@ -203,7 +214,7 @@ def get_new_car():
             tasto_cambio_pagina = tasto_cambio_pagina.find_element_by_tag_name("a")
             tasto_cambio_pagina.click()
             time.sleep(3)
-            scroll_page()
+            #scroll_page()
             print("Ho cambiato pagina")
         except NoSuchElementException:
             page_left = False
