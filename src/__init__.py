@@ -260,7 +260,7 @@ def cambia_allestimento(allest):
 def start_new_search(cars_json):
     global driver, list_auto_old, list_auto_new
     try:
-        with Chrome() as driver:
+        with Chrome(executable_path=r'C:\\Prog\\chromedriver_win32\\ver85\\chromedriver.exe') as driver:
             driver.get(sito)
             ok = settings()
             if not ok:
