@@ -13,9 +13,13 @@ from selenium.common.exceptions import NoSuchElementException
 import telegram_send
 import argparse
 
-DEBUG = False
+DEBUG = True
 with open("config.json","r") as config:
     config = json.load(config)
+    if config["path_driver"] is not None:
+        path_driver=config["path_driver"]
+    else:
+        raise Exception("Manca il campo path_driver in config.json che indica il percorso dei chrome driver della versione corrente di Google Chrome")
     if config['sito'] is not None:
         sito = config['sito']
     else:
@@ -257,10 +261,10 @@ def cambia_allestimento(allest):
     except NoSuchElementException:
         return False
 
-def start_new_search(cars_json):
+def start_new_search(cars_json,path_driver):
     global driver, list_auto_old, list_auto_new
     try:
-        with Chrome(executable_path=r'C:\\Prog\\chromedriver_win32\\ver85\\chromedriver.exe') as driver:
+        with Chrome(executable_path=path_driver) as driver:
             driver.get(sito)
             ok = settings()
             if not ok:
@@ -301,7 +305,7 @@ if __name__== '__main__':
         try:
             time.sleep(int(args.delay))
             while True:
-                start_new_search(cars_json)
+                start_new_search(cars_json,path_driver)
                 time.sleep(60*60)
         except Exception as e:
             with open(stderrFile, 'a') as error:
@@ -309,4 +313,4 @@ if __name__== '__main__':
             if DEBUG:
                 raise
     else:
-        start_new_search(cars_json)
+        start_new_search(cars_json,path_driver)
