@@ -300,7 +300,7 @@ def start_new_search(cars_json,path_driver):
         if DEBUG:
             raise
 
-if __name__== '__main__':
+if __name__ == '__main__':
     if args.loop is not None and args.loop:
         try:
             time.sleep(int(args.delay))
