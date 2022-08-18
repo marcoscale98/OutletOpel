@@ -1,4 +1,5 @@
 {
-  "path_driver": "/Library/Google/Chrome/chromedriver/chromedriver",
-  "sito": "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock"
+  "path_driver": "/Users/marco/Downloads/chromedriver",
+  "sito": "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock",
+  "cambio": "Automatico A 8 Rapporti"
 }

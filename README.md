@@ -7,3 +7,12 @@
 ## Problemi
 Quando si sfoglia tra le pagine di una ricerca potrebbero capitare dei 
 duplicati. è un problema del sito
+
+## Come lanciarlo
+Passi:
+- Modificare il file _config.json_ con i seguenti parametri:
+  - _cars_json_(opzionale): path del file dove memorizzare le auto già visualizzate
+  - _path_driver_: path dell'eseguibile dei driver di Chrome
+  - _sito_ (opzionale): sito opel outlet
+  - _allestimento_desiderato_ (opzionale): array di stringhe con il nome degli allestimenti desiderati
+- `python src/main.py`

@@ -1,62 +1,50 @@
 # Ricorda! Stai usando la versione dei Driver per Chrome 83.0.4103.39
 import json
+import pprint
 import socket
 import time
+from typing import Dict
 
-import requests
-import selenium.common.exceptions
-import urllib3
 from selenium.webdriver import Chrome
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
 import telegram_send
 import argparse
+from urllib3.exceptions import NewConnectionError, MaxRetryError
 
 DEBUG = True
-STD_ERR_FILE = r'stderr.txt'
-ERR_SCREEN_FILE = r'screenFail.png'
+STD_ERR_FILE = 'stderr.txt'
+ERR_SCREEN_FILE = 'screenFail.png'
+CHROMEDRIVER_LOG_PATH ='chromedriver.log'
 
 
 def configurations():
-    global path_driver, sito, optional_desiderati, allestimento_desiderato, cars_json, cap, radius
-    with open("config.json", "r") as config:
-        config = json.load(config)
-        if config["path_driver"] is not None:
-            path_driver = config["path_driver"]
-        else:
+    global path_driver, sito, optional_desiderati, allestimento_desiderato, cars_json, cap, radius, send_tg_message, cambio
+    with open("config.json", "r") as config_file:
+        config: Dict = json.load(config_file)
+        path_driver = config.get("path_driver")
+        if path_driver is None:
             raise Exception(
                 "Manca il campo path_driver in config.json che indica il percorso dei chrome driver della versione corrente di Google Chrome")
-        if config['sito'] is not None:
-            sito = config['sito']
-        else:
-            sito = "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock"
-        optional_desiderati = []
-        if config['optional_desiderati'] is not None:
-            optional_desiderati = config['optional_desiderati']
-        allestimento_desiderato = []
-        if config["allestimento_desiderato"] is not None:
-            allestimento_desiderato = config["allestimento_desiderato"]
-        cars_json = "cars.json"
-        if config["database"] is not None:
-            cars_json = config["database"]
-        cap = "10010"
-        if config["cap"] is not None:
-            cap = config["cap"]
-        radius = "200"
-        if config["radius"] is not None:
-            radius = config["radius"]
-
+        sito = config.get("sito", "https://vacsitmarketitopel.carusseldwt.com/result/conf/itstock")
+        optional_desiderati = config.get('optional_desiderati')
+        allestimento_desiderato = config.get("allestimento_desiderato")
+        cars_json = config.get("database", "cars.json")
+        cap = config.get("cap", "10010")
+        radius = config.get("radius", "200")
+        cambio = config.get("cambio")
 
 def config_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--loop', action='store_true', help='Indicates if you want script always on')
-    parser.add_argument('--delay', dest='delay', help='indicates seconds of delay before running the loop')
+    parser.add_argument('--delay', dest='delay', help='Indicates seconds of delay before running the loop')
+    parser.add_argument('--send-tg-alerts', action='store_false', help='Indicates if you want to send telegram alerts', dest='send_tg_alerts')
     parser.set_defaults(delay=1)
     return parser.parse_args()
 
 
-def is_rendering():
+def is_rendering(driver):
     try:
         rend = driver.find_element_by_xpath(
             "/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[8]/label/span/img")
@@ -71,33 +59,44 @@ def is_rendering():
 
 def is_new_car(nuova_auto, link):
     """True se la nuova auto non era presente, oppure era presente ma si è aggiornata"""
-    manda_tg = False
+    res = False
     if link in list_auto_old:
         if list_auto_old[link] != nuova_auto:
-            manda_tg = True
+            res = True
     else:
-        manda_tg = True
-    if manda_tg:
-        messaggio = "<a href='{0}'>{1} al prezzo di: {2}</a>".format(link, nuova_auto['nome'], nuova_auto['prezzo'])
-        telegram_send.send(messages=[messaggio], parse_mode="html")
-    return manda_tg
+        res = True
+    return res
 
 
-def settings():
+
+def settings(driver):
     # SETTINGS
+    # try:
+    #     driver.find_element_by_xpath("/html/body").find_element_by_id("main-frame-error")
+    #     print("Errore di connessione")
+    #     return False
+    # except selenium.common.exceptions.NoSuchElementException:
+    #     pass
+
+    #id: _psaihm_id_accept_all_btn
+    #accept cookie
     try:
-        driver.find_element_by_xpath("/html/body").find_element_by_id("main-frame-error")
-        print("Errore di connessione")
-        return False
-    except selenium.common.exceptions.NoSuchElementException:
+        accept_cookie_btn = driver.find_element_by_id('_psaihm_id_accept_all_btn')
+        accept_cookie_btn.click()
+    except NoSuchElementException as e:
         pass
+
+    # select opel corsa model
     try:
-        model_select = Select(
-            driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[1]/label/select"))
+        #model_select = Select(
+            # driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[1]/label/select"))
+        model_select = driver.find_element_by_name('modelContainer:modelGroup')
+        model_select = Select(model_select)
     except NoSuchElementException:
-        print("Errore di connessione")
+        print("Non ho trovato il modello 'Corsa'")
         return False
     model_select.select_by_value('6')
+    # check if i selected 'corsa' model
     selezionato = model_select.first_selected_option.text
     if selezionato == "Corsa":
         print("Selezionato il modello", selezionato)
@@ -105,25 +104,34 @@ def settings():
         return False
     time.sleep(3)
 
-    city_input = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[5]/input")
+    # select the city where find the car
+    #city_input = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[5]/input")
+    city_input = driver.find_element_by_name('zipCodeContainer:zipCode')
     if city_input is None:
+        print('Non ho trovato il cap da selezionare nella pagina')
         return False
     city_input.send_keys(cap)
     city_input.send_keys(Keys.ENTER)
+    # check if i selected the right cap
     selezionato = city_input.get_attribute("value")
     if selezionato == cap:
         print("Selezionato il cap", selezionato)
     else:
+        print('Non ho selezionato il giusto cap nella pagina')
         return False
     time.sleep(3)
 
-    raggio = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[6]/label/select")
+    # select the radius of the search
+    # raggio = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[6]/label/select")
+    raggio = driver.find_element_by_name('radiusContainer:radius')
     if raggio is None:
+        print("Raggio non trovato nella pagina")
         return False
     raggio = Select(raggio)
     if raggio is None:
         return False
     raggio.select_by_visible_text(radius)
+    # check if i selected the right radius
     selezionato = raggio.first_selected_option.text
     if selezionato == radius:
         print("Selezionato il raggio", selezionato)
@@ -131,35 +139,40 @@ def settings():
         return False
     time.sleep(3)
 
-    try:
-        trasm_box = driver.find_element_by_xpath(
-            "/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[7]/label/select")
-        trasmission = Select(trasm_box)
-        trasmission.select_by_index(1)  # cambio automatico
-        selezionato = trasmission.first_selected_option.text
-        if selezionato == "Cambio automatico":
-            print("Selezionato la trasmissione", selezionato)
-        else:
+    # select the automatic gear selector
+    if cambio:
+        try:
+            trasm_box = driver.find_element_by_name('gearTypeContainer:gearType')
+            if trasm_box is None:
+                print("Non ho trovato il box per selezionare il cambio")
+            trasmission = Select(trasm_box)
+            trasmission.select_by_visible_text(cambio)
+            selezionato = trasmission.first_selected_option.text
+            if selezionato == cambio:
+                print("Selezionato la trasmissione", selezionato)
+            else:
+                print("Non ho selezionato il giusto cambio")
+                return False
+            time.sleep(3)
+        except NoSuchElementException:
+            print("Non ho trovato il box per selezionare il cambio")
             return False
-        time.sleep(3)
-    except NoSuchElementException:
-        return False
     return True
 
 
-def scroll_page():
+def scroll_page(driver):
     # scroll the page to load all the cars
     i = 0
-    while i < 3:
+    while i < 10:
         driver.execute_script("window.scrollBy(0,250)")
         i += 1
-        time.sleep(2)
+        time.sleep(1)
 
 
 def ha_optional_giusti(nuova_auto: dict):
     i = 0
     trovato_corretto = True
-    while trovato_corretto and i < len(optional_desiderati):
+    while trovato_corretto and optional_desiderati is not None and i < len(optional_desiderati):
         j = 0
         is_present = False
         while (not is_present) and j < len(optional_desiderati[i]):
@@ -178,7 +191,11 @@ def allestimento_giusto(nuova_auto):
     return False
 
 
-def get_new_car():
+def get_new_car(driver):
+    """
+    Analizza tutte le auto presenti sul sito
+    Prerequisiti: aver settato le impostazioni
+    """
     print("Analizzo nuovo blocco auto")
     # GET INFO
     auto_left = True
@@ -186,9 +203,10 @@ def get_new_car():
     n_page = 0
     # estrae auto dalla lista sul sito
     while page_left:
-        box_auto = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[2]")
+        scroll_page(driver)
+        box_auto = driver.find_element_by_class_name("page_right")
         automobili = box_auto.find_elements_by_class_name('auto_item')
-        print("Trovate", str(len(automobili)), "auto da analizzare nella pagina numero", n_page)
+        print("Trovate", str(len(automobili)), "auto da analizzare nella pagina numero", n_page + 1)
         n_page += 1
         n_auto = 0
         while auto_left and n_auto < len(automobili):
@@ -214,9 +232,7 @@ def get_new_car():
             except NoSuchElementException:
                 print(n_auto, "- nome non trovato")
                 continue
-            # cerca se allestimento è giusto (secondo controllo)
             nuova_auto = {'nome': nome}
-            # if allestimento_giusto(nuova_auto):
             print(n_auto, '- Ho trovato questa auto con allestimento giusto', nuova_auto)
             if link in list_auto_new:
                 print(link, "- è già presente")
@@ -232,14 +248,22 @@ def get_new_car():
             tasto_cambio_pagina = tasto_cambio_pagina.find_element_by_tag_name("a")
             tasto_cambio_pagina.click()
             time.sleep(3)
-            # scroll_page()
             print("Ho cambiato pagina")
         except NoSuchElementException:
             page_left = False
 
 
-def arricchisci_scheda_auto():
-    # controlla che l'auto abbia gli optionals giusti e che sia nuova
+def send_telegram(link, nuova_auto):
+    messaggio = "<a href='{0}'>{1} al prezzo di: {2}</a>".format(link, nuova_auto['nome'], nuova_auto['prezzo'])
+    telegram_send.send(messages=[messaggio], parse_mode="html")
+
+
+def arricchisci_scheda_auto(driver):
+    """
+    controlla che l'auto abbia gli optionals giusti e che sia nuova
+    :param driver:
+    :return:
+    """
     print("Controllo le pagine di", len(list_auto_new), "auto")
     for link, car in list_auto_new.copy().items():
         driver.get(link)
@@ -251,21 +275,28 @@ def arricchisci_scheda_auto():
         try:
             prezzo_box = driver.find_element_by_class_name("gross_price_new")
             car['prezzo'] = prezzo_box.text
-        except NoSuchElementException:  # non c'è scitto il prezzo
+        except NoSuchElementException:  # non c'è scritto il prezzo
             car['prezzo'] = ""
 
         if ha_optional_giusti(car):
-            print('- Ho trovato questa auto con optional corretti', car)
-            if not is_new_car(car, link):  # se era già presente
+            print('- Ho trovato questa auto con optional corretti')
+            pprint.pprint(car, indent=2)
+            is_new_car_ = is_new_car(car, link)
+            if not is_new_car_:  # se era già presente
                 list_auto_old.pop(link)
+            else:
+                if args.send_tg_alerts:
+                    send_telegram(link, car)
         else:
             list_auto_new.pop(link)
 
 
-def cambia_allestimento(allest):
+def cambia_allestimento(allest, driver):
     try:
-        allest_select = driver.find_element_by_xpath(
-            "/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[8]/label/select")
+        # allest_select = driver.find_element_by_xpath("/html/body/div[2]/div[1]/div[2]/div[1]/div/form/div[2]/div[8]/label/select")
+        allest_select = driver.find_element_by_name("serieTypeContainer:serieType")
+        if allest_select is None:
+            print("Box per inserire allestimento non trovato")
         allest_select = Select(allest_select)
         allest_select.select_by_visible_text(allest)
         selezionato = allest_select.first_selected_option.text
@@ -273,22 +304,26 @@ def cambia_allestimento(allest):
             print("Selezionato allestimento", selezionato)
             time.sleep(3)
         else:
+            print("Non ho selezionato il giusto allestimento")
             return False
         return True
     except NoSuchElementException:
+        print("Box per inserire allestimento non trovato")
         return False
 
 
 def start_new_search(cars_json, path_driver):
-    global driver, list_auto_old, list_auto_new
+    global list_auto_old, list_auto_new
     try:
-        with Chrome(executable_path=path_driver) as driver:
+        with Chrome(executable_path=path_driver, service_log_path=CHROMEDRIVER_LOG_PATH) as driver:
+            driver: Chrome = driver
             driver.get(sito)
-            ok = settings()
+            ok = settings(driver)
             if not ok:
                 return
             list_auto_old = {}
             list_auto_new = {}
+            # carica le auto già visualizzate in passato
             try:
                 with open(cars_json, 'r', encoding='UTF-8') as reader:
                     list_auto_old = json.load(reader)
@@ -296,25 +331,26 @@ def start_new_search(cars_json, path_driver):
                 with open(cars_json, 'x', encoding='UTF-8') as writer:
                     writer.write(json.dumps({}))
             print("Nuova ricerca auto")
-            for al in allestimento_desiderato:
-                if ok:
-                    ok = cambia_allestimento(al)
-                else:
-                    return
-                if ok:
-                    get_new_car()
-                else:
-                    return
-            arricchisci_scheda_auto()
+            if allestimento_desiderato:
+                for al in allestimento_desiderato:
+                    if ok:
+                        ok = cambia_allestimento(al, driver)
+                    else:
+                        return
+                    if ok:
+                        get_new_car(driver)
+                    else:
+                        return
+            else:
+                get_new_car(driver)
+            arricchisci_scheda_auto(driver)
             # persistenza delle nuove auto
             with open(cars_json, 'w', encoding='UTF-8') as writer:
                 writer.write(json.dumps(list_auto_new, indent=3))
             print("Fine ricerca")
-    except (
-    ConnectionRefusedError, socket.gaierror, urllib3.exceptions.NewConnectionError, urllib3.exceptions.MaxRetryError,
-    requests.exceptions.ConnectionError):
+    except (ConnectionRefusedError, socket.gaierror, NewConnectionError, MaxRetryError,ConnectionError):
         print("Errore di connessione")
-    except selenium.common.exceptions.NoSuchElementException as e:
+    except NoSuchElementException as e:
         with open(STD_ERR_FILE, 'a') as errFile:
             print(time.strftime("%d/%m/%Y %H:%M:%S", time.localtime()), e, file=errFile)
         if DEBUG:
@@ -322,6 +358,7 @@ def start_new_search(cars_json, path_driver):
 
 
 if __name__ == '__main__':
+    global args
     configurations()
     args = config_argparser()
     if args.loop is not None and args.loop:
